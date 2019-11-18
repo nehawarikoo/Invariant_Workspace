@@ -1,7 +1,7 @@
 '''
 Created on Jul 19, 2019
 
-@author: iasl
+@author: neha@iasl
 '''
 
 import sys
@@ -108,6 +108,11 @@ class PatternEntropy(object):
     
     
     def __invariant_optimization__(self, buffer_feature_matrix, appendType, pattern_index):
+        
+        '''
+        Evaluate n-frames for invariance. Using algebraic optimization, 
+        cluster features to generate Universal Lexical Clusters (ULC)
+        '''
     
         def get_components(tier1BufferDict):
             
@@ -143,7 +148,6 @@ class PatternEntropy(object):
                 invar_fraction = (num_val/den_val)
                 invar_fraction = float("{:.1f}".format(invar_fraction))
                 #print(num,'\t',den,'\t',invar_fraction,'\t',float("{:.2f}".format(invar_fraction)),'\t',self.threshold)
-                #sys.exit()
                 update_list = []
                 if feature_dict.__contains__(num[0]):
                     update_list = feature_dict.get(num[0])
@@ -157,10 +161,7 @@ class PatternEntropy(object):
                     if not update_list.__contains__(num[1]):
                         update_list.extend(num[1])
                     feature_dict.update({num[0]:update_list})
-                    #print(i,'\t',j)
                     i = j
-                    #print('after',i,'\t',j)
-                    
                 
                 j = j+1
             
@@ -168,16 +169,14 @@ class PatternEntropy(object):
                 temp = decoy_list[i]
                 feature_dict.update({temp[0]:temp[1]})
                 
-            '''
-            print('\n\n*********')
-            print('updated length::',len(feature_dict))
-            for i,v in feature_dict.items():
-                print(i,'\t',v)
-            '''         
             
             return(feature_dict)
         
         def write_to_featurefile(lead_feature, pattern_index, invar_distribution, append_status, appendType):
+            
+            '''
+            Write cluster embedding vectors on file
+            '''
             
             string_feature = ''
             if isinstance(lead_feature, list):
@@ -232,7 +231,7 @@ class PatternEntropy(object):
             else:
                 start_range = (end_range*1.1)
                 
-            print(pattern_index,'\t',appendType,'\t',start_range,'\t',end_range)
+            tf.logging.info('%s' %pattern_index +'\t %s'%appendType+'\t %s'%start_range+'\t %s'%end_range)
 
             if (start_range == 0.0):
                 invar_distribution = np.random.randn(
@@ -306,6 +305,7 @@ class PatternEntropy(object):
         append_status = "a+"
         if pattern_index == 0:
             append_status = "w+"
+            # dummy mask features
             unused_list = ['unused0', 'unused1', 'unused2', 'unused3', 'unused4', 'unused5', 'unused6', 
                            '[CLS]', '[SEP]', '[MASK]']
             for lead_feature in unused_list:
@@ -329,16 +329,19 @@ class PatternEntropy(object):
                 
             tier2BufferList = sorted(tier2BufferDict.items(), key=itemgetter(0), reverse=True)
             feature_dict = optimization(tier2BufferList)
-            print(tier1Key,'\t original:',len(tier2BufferDict),'\t reduced:', len(feature_dict))
+            tf.logging.info('%s' %tier1Key +'\t original: %s' %len(tier2BufferDict)+'\t reduced: %s'%len(feature_dict))
             pattern_index = generate_feature_map(feature_dict, pattern_index, 
                                                  tier1Key, append_status, appendType, weight_index)
             
             weight_index += 1.0
-        print('\n final pattern index:::',pattern_index,'\t weight_index',weight_index)
+        tf.logging.info('\n final pattern index: %s' %pattern_index +'\t weight_index: %s'%weight_index)
         return(pattern_index)
     
     def calculate_entropy(self, appendType, pattern_index):
         
+        '''
+        Calculate invariance for each n-frame
+        '''
         append_index = False
         buffer_feature_matrix = {}
         for (tier1Key, tier1Value) in six.iteritems(self.PosDict):
@@ -357,7 +360,6 @@ class PatternEntropy(object):
                 append_index = True
                 '''
                 index +=1
-                #print(index,'\t',current_pattern_list)
         
         pattern_index = self.__invariant_optimization__(buffer_feature_matrix, appendType, pattern_index)
         

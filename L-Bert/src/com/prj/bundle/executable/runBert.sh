@@ -9,7 +9,6 @@ do
 			--do_eval=true \
 			--do_predict=true \
 			--vocab_file=$LBERTDIR/L-Bert/src/com/prj/bundle/resource/biobert_v1.0_pubmed/vocab.txt \
-			--pretrain_embed=$LBERTDIR/L-Bert/src/com/prj/bundle/resource/GoogleNews-vectors-negative300.bin \
 			--bert_config_file=$LBERTDIR/L-Bert/src/com/prj/bundle/resource/biobert_v1.0_pubmed/bert_config.json \
 			--init_checkpoint=$LBERTDIR/ValidationSet_Generation/src/com/prj/bundle/output_19.0/model.ckpt-8971 \
 			--feature_dir=$LBERTDIR/SInD/src/com/prj/bundle/processed \

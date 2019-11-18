@@ -14,10 +14,10 @@ import tensorflow as tf
 import socket
 
 
-if socket.gethostname() == 'iaslgpu3':
-    sys.path.append('/home/neha/nlp/NeonWorkspace_1.6/SInD')
-elif  socket.gethostname() == 'iaslgpu5':
-    sys.path.append('/home/iasl/Neha_W/NeonWorkspace_1.6/SInD')
+if socket.gethostname() == 'GPU_1':
+    sys.path.append('./SInD')
+elif  socket.gethostname() == 'GPU_2':
+    sys.path.append('./SInD')
 
 import src.com.prj.bundle.optimization.entropy as entropyInstance
 
@@ -29,13 +29,16 @@ class InputDataStream(object):
         
     def featureConvolution(self, appendType, pattern_index):
         
+        '''
+        Instantiate feature convolution to generate localised n-frames
+        '''
+        
         featureInstance = entropyInstance.PatternEntropy(self.configDesc)
         featureInstance.PosDict = collections.OrderedDict()
         filterSize = int(self.configDesc.get("filterSize"))
         strideSize = int(self.configDesc.get("strideSize"))
         featureInstance.filterSize = int(filterSize)
         
-        print('file type:', appendType)
         
         for tier1Key, tier1Value in self.PostTagStream.items():
             tier1BufferResultDict = {}
@@ -72,6 +75,9 @@ class InputDataStream(object):
     
     def sequencePadding(self, maxTokenLength):
         
+        '''
+        Apply padding at terminals for sequence processing
+        '''
         kernelSize = int(self.configDesc.get("filterSize"))
         strideSize = int(self.configDesc.get("strideSize"))
         if strideSize > kernelSize:
@@ -92,6 +98,10 @@ class InputDataStream(object):
     
     
     def readInputStream(self, appendType, pattern_index):
+        
+        '''
+        Read POS Tag input file for feature pre-processing
+        '''
         
         maxTokenLength = 0
         self.PostTagStream = {}
@@ -135,6 +145,10 @@ class InputDataStream(object):
         return(pattern_index)
 
 def openConfigurationFile(decoyInstance):
+    
+    '''
+    Load json configuration file
+    '''
     
     path = os.getcwd()
     tokenMatcher = re.search(".*SInD\/", path)

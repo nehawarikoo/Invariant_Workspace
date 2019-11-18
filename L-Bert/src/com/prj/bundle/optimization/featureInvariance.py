@@ -22,7 +22,7 @@ class SemanticInvariance(object):
     
     def __init__(self, embed_locale, feature_locale):
         
-        self.pretrained_Embedding = KeyedVectors.load_word2vec_format(embed_locale,binary=True)
+        self.pretrained_Embedding = np.array([])#KeyedVectors.load_word2vec_format(embed_locale,binary=True)
         self.feature_map = {}
         self.embeddingDimension = 300
         self.unseenEmbedding = {}
@@ -31,9 +31,11 @@ class SemanticInvariance(object):
         seed(1)
         set_random_seed(2)
         
+        '''
         if(len(self.pretrained_Embedding.vocab)) == 0:
             tf.logging.info("Error loading the pre-trained embedding")
-            
+        '''
+        
         #self.assemble_feature_map(feature_locale)
         #self.load_sequence_map(sequence_locale)
         self.load_posPattern_map(feature_locale)

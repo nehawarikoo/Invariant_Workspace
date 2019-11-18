@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""The main BERT model and related functions."""
+"""L-BERT modeling functions"""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -32,7 +32,7 @@ import csv
 import numpy as np
 
 class BertConfig(object):
-    """Configuration for `BertModel`."""
+    """Configuration for base `BertModel`."""
     
     def __init__(self,
                vocab_size,
@@ -110,15 +110,21 @@ class BertConfig(object):
 
 
 class BertModel(object):
-    """BERT model ("Bidirectional Encoder Representations from Transformers").
-
+    
+    """L-BERT model ("Lexical - Bidirectional Encoder Representations from Transformers")
+        Lexical layered implementation of Transformers using BERT abstraction
       Example usage:
 
       ```python
-      # Already been converted into WordPiece token ids
+      # Vectored representation of tokenized and contextualized feature id's
+      cluster_ids = tf.constant([[7,45,234],[7,78,235]])
+      context_ids = tf.constant([[7,789,865],[7,790,965]])
       input_ids = tf.constant([[31, 51, 99], [15, 5, 0]])
       input_mask = tf.constant([[1, 1, 1], [1, 1, 0]])
       token_type_ids = tf.constant([[0, 0, 1], [0, 2, 0]])
+      context_mask = tf.constant([[1,1,0],[1,0,1]])
+      
+      kernel_size = [3]
     
       config = modeling.BertConfig(vocab_size=32000, hidden_size=512,
         num_hidden_layers=8, num_attention_heads=6, intermediate_size=1024)
@@ -147,7 +153,8 @@ class BertModel(object):
                  token_type_ids=None,
                  use_one_hot_embeddings=True,
                  scope=None):
-        """Constructor for BertModel.
+        
+        """Constructor for L-BERT model application.
 
         Args:
         config: `BertConfig` instance.
@@ -172,12 +179,6 @@ class BertModel(object):
             config.hidden_dropout_prob = 0.0
             config.attention_probs_dropout_prob = 0.0
 
-        print('input_id::',input_ids)
-        print('cluster_ids::',cluster_ids)
-        print('context_ids::',context_ids)
-        print('input_mask::',input_mask)
-        print('context_mask::',context_mask)
-        print('segment_ids/token_type_ids::',token_type_ids)
         input_shape = get_shape_list(input_ids, expected_rank=2)
         batch_size = input_shape[0]
         seq_length = input_shape[1]
@@ -195,8 +196,8 @@ class BertModel(object):
         if bool(layer_def[0]):
             with tf.variable_scope(scope, default_name="bert"):
                 with tf.variable_scope("embeddings"):
-                    # Perform embedding lookup on the word ids.
-                   
+                    
+                    # Perform embedding lookup on the word token ids.
                     (self.word_output, self.embedding_table) = embedding_lookup(
                     input_ids=input_ids,
                     vocab_size=config.vocab_size,
@@ -207,7 +208,7 @@ class BertModel(object):
                     
                     self.embedding_output = self.word_output
                         
-                    ''' current cluster index id'''
+                    ''' Embedding look upfor POS-Tag context id Universal Feature Cluster'''
                     self.cluster_output, self.cluster_embedding_table = cluster_embedding_lookup(
                         cluster_ids=cluster_ids,
                         feature_locale=feature_locale,
@@ -218,7 +219,7 @@ class BertModel(object):
                         
                     self.embedding_output = self.cluster_output+self.embedding_output
                     
-                    ''' distance embedding'''
+                    ''' (Optional) Embedding based on relative distance '''
                     '''
                     self.distance_output, self.distance_embedding_table = distance_embedding_lookup(
                         input_ids=input_ids,
@@ -230,8 +231,7 @@ class BertModel(object):
                     self.embedding_output = self.distance_output+self.embedding_output
                     '''
                        
-                    ''' current context id'''
-                    
+                    ''' (Optional) Embedding look upfor Chunk context id Universal Feature Cluster '''
                     '''
                     (self.context_output, self.context_embedding_table) = context_embedding_lookup(
                         input_tensor=self.embedding_output,
@@ -262,16 +262,6 @@ class BertModel(object):
                         entity_type_ids=context_mask,
                         dropout_prob=config.hidden_dropout_prob)
                     
-                '''	
-                with tf.variable_scope("sequence"):
-                    self.embedding_output = tf.layers.dense(
-                        self.embedding_output,
-                        config.hidden_size,
-                        activation=tf.tanh,
-                        kernel_initializer=create_initializer(config.initializer_range))
-                    print('lstm o/p:', self.embedding_output)
-                '''
-                    
                 with tf.variable_scope("encoder"):
                     # This converts a 2D mask of shape [batch_size, seq_length] to a 3D
                     # mask of shape [batch_size, seq_length, seq_length] which is used
@@ -298,193 +288,38 @@ class BertModel(object):
                             initializer_range=config.initializer_range,
                             do_return_all_layers=True)
                         
-                        print('trans op::',self.all_encoder_layers)
+                        #print('trans op::',self.all_encoder_layers)
                         self.sequence_output = self.all_encoder_layers[-1]
-                        '''
-                        with tf.variable_scope("seq"):
-                            lastLayer = tf.get_variable("lastLayer",self.sequence_output.shape)
-                        '''
-                        print('aftr trans op::',self.sequence_output)
+                        #print('aftr trans op::',self.sequence_output)
                         #self.sequence_output = tf.stop_gradient(self.sequence_output)
                 
                 # The "pooler" converts the encoded sequence tensor of shape
                 # [batch_size, seq_length, hidden_size] to a tensor of shape
-                # [batch_size, hidden_size]. This is necessary for segment-level
-                # (or segment-pair-level) classification tasks where we need a fixed
-                # dimensional representation of the segment.
+                # [batch_size, 2,  hidden_size]. We include the tensors from 
+                # terminal tokens [CLS] and [SEP]. This is done to present a
+                # bi-directional state of relevant sentence features developed 
+                # over relative position. This expunges normalized '000' present at the tail
+                # of feature vector to include representations till last known valid token
                 with tf.variable_scope("pooler"):
                     # We "pool" the model by simply taking the hidden state corresponding
                     # to the first token. We assume that this has been pre-trained
-                    #first_token_tensor =  tf.keras.layers.MaxPool1D(pool_size = 128, strides=1)(self.sequence_output)
-                    #first_token_tensor = tf.squeeze(first_token_tensor[:, 0:1, :], axis=1)
                     
                     first_token_tensor = tf.squeeze(self.sequence_output[:, 0:1, :], axis=1)
-                    index = tf.where(tf.equal(input_ids, 1475))
                     
+                    # We "pool" the model by simply taking the hidden state corresponding
+                    # to the terminal 'SEP' token. We assume that this has been pre-trained
+                    index = tf.where(tf.equal(input_ids, 1475))
                     second_token_tensor = tf.gather_nd(self.sequence_output, index)
                     input_shape = get_shape_list(self.sequence_output, expected_rank=3)
                     second_token_tensor = tf.reshape(second_token_tensor, [input_shape[0], input_shape[2]])
-                    print(second_token_tensor)
                     #first_token_tensor = tf.concat([self.sequence_output[:,0:1,:],second_token_tensor],1)
-                    print('pooled::',first_token_tensor.shape)
                     self.pooled_output = tf.layers.dense(
                         first_token_tensor,
                         config.hidden_size,
                         activation=tf.tanh,
                         kernel_initializer=create_initializer(config.initializer_range))
-                    print('pooled op::',self.pooled_output.shape)
                     #self.pooled_output = tf.layers.flatten(self.pooled_output)
-                    print('pooled flatten op::',self.pooled_output.shape)
                 
-            
-        if False:#bool(layer_def[1]):
-            with tf.variable_scope(scope, default_name="bert"):
-                with tf.variable_scope("embeddings"):
-                    
-                    # Perform embedding lookup on the context ids.
-                    '''
-                    (self.context_output, self.cluster_embedding_table) = embedding_lookup(
-                        input_ids=cluster_ids,
-                        vocab_size=config.vocab_size,
-                        embedding_size=config.hidden_size,
-                        initializer_range=config.initializer_range,
-                        word_embedding_name="word_embeddings",
-                        use_one_hot_embeddings=use_one_hot_embeddings)
-                    
-                    '''
-                    (self.context_output, self.cluster_embedding_table) = cluster_embedding_lookup(
-                        cluster_ids=cluster_ids,
-                        feature_locale=feature_locale,
-                        cluster_size=config.cluster_size,
-                        embedding_size=config.hidden_size,
-                        context_embedding_name="cluster_embeddings",
-                        use_one_hot_embeddings=use_one_hot_embeddings)
-                    '''
-                    (self.context_output, self.context_embedding_table) = context_embedding_lookup(
-                        input_tensor=self.context_output,
-                        context_ids=context_ids,
-                        feature_locale=feature_locale,
-                        cluster_size=config.cluster_size,
-                        embedding_size=config.hidden_size,
-                        context_embedding_name="context_embeddings",
-                        use_one_hot_embeddings=use_one_hot_embeddings)
-                    
-                    '''
-                    '''
-                    self.context_output = embedding_postprocessor(
-                        input_tensor=self.context_output,
-                        use_token_type=bool(layer_def[2]),
-                        token_type_ids=token_type_ids,
-                        token_type_vocab_size=config.type_vocab_size,
-                        token_type_embedding_name="token_type_embeddings",
-                        use_position_embeddings=bool(layer_def[3]),
-                        position_embedding_name="position_embeddings",
-                        initializer_range=config.initializer_range,
-                        max_position_embeddings=config.max_position_embeddings,
-                        dropout_prob=config.hidden_dropout_prob)
-                    
-                    
-                    '''
-                    '''
-                    self.context_output = context_postprocessor(
-                        input_tensor=self.context_output,
-                        use_context_type=bool(layer_def[3]),
-                        mask_ids=context_mask,
-                        mask_embedding_name="mask_embeddings",
-                        initializer_range=config.initializer_range,
-                        dropout_prob=config.hidden_dropout_prob)
-                    '''
-
-                '''
-                with tf.variable_scope("sequence"):
-                    hidden_dimension = self.context_output.shape.as_list()[-1]
-                    self.context_output = tf.keras.layers.LSTM(
-                        hidden_dimension, return_sequences=True)(self.context_output)
-                    self.context_output = layer_norm_and_dropout(self.context_output, 0.2)
-                    print('lstm o/p:', self.context_output)
-                '''
-                
-                '''
-                with tf.variable_scope("subencoder"):
-                    expanse_tensor = self.context_output
-                    expanse_tensor = tf.layers.dense(
-                        expanse_tensor,
-                        config.hidden_size * kernel_size,
-                        activation=tf.tanh,
-                        name="expanse",
-                        kernel_initializer=create_initializer(config.initializer_range))
-                '''
-                        
-                with tf.variable_scope("encoder"):
-                    
-                    if bool(layer_def[1]):
-                        context_attention_mask = create_attention_mask_from_input_mask(
-                            context_ids, context_mask)
-                    
-                        self.all_context_encoder_layers = transformer_model(
-                            input_tensor=self.context_output,
-                            attention_mask=context_attention_mask,
-                            hidden_size=config.hidden_size,
-                            num_hidden_layers=config.num_hidden_layers,
-                            num_attention_heads=config.num_attention_heads,
-                            intermediate_size=config.intermediate_size,
-                            intermediate_act_fn=get_activation(config.hidden_act),
-                            hidden_dropout_prob=config.hidden_dropout_prob,
-                            attention_probs_dropout_prob=config.attention_probs_dropout_prob,
-                            initializer_range=config.initializer_range,
-                            do_return_all_layers=True)
-                        
-                        print('context op::',self.all_context_encoder_layers)
-                        self.context_sequence_output = self.all_context_encoder_layers[-1]
-                        print('aftr context trans op::',self.context_sequence_output)
-                        
-                '''
-                with tf.variable_scope("sequence"):
-                    hidden_dimension = self.context_sequence_output.shape.as_list()[-1]
-                    self.context_sequence_output = tf.keras.layers.LSTM(
-                        hidden_dimension)(self.context_sequence_output)
-                    print('lstm o/p:', self.context_sequence_output)
-                '''
-                    
-                with tf.variable_scope("pooler"):
-                    # We "pool" the model by simply taking the hidden state corresponding
-                    # to the first token. We assume that this has been pre-trained
-                    first_token_tensor =  tf.keras.layers.MaxPool1D(pool_size = 128, strides=1)(self.context_sequence_output)
-                    first_token_tensor = tf.squeeze(first_token_tensor[:, 0:1, :], axis=1)
-                    #first_token_tensor = tf.squeeze(self.context_sequence_output[:, 0:1, :], axis=1)
-                    print('reduce::',first_token_tensor.shape)
-                    self.reduce_output = tf.layers.dense(
-                        first_token_tensor,
-                        config.hidden_size,
-                        activation=tf.tanh,
-                        kernel_initializer=create_initializer(config.initializer_range))
-                    print('reduce op::',self.reduce_output.shape)
-
-                '''
-                with tf.variable_scope("reduce"):
-                    self.reduce_output = tf.layers.dense(
-                        self.context_sequence_output,
-                        6,
-                        activation=tf.tanh,
-                        kernel_initializer=create_initializer(config.initializer_range))
-                    
-                    print('reduce::',self.reduce_output)
-                    self.reduce_output = tf.layers.flatten(self.reduce_output)
-                    print('reduce op::',self.reduce_output.shape)
-                '''
-               
-        
-        if False:#bool(layer_def[1]) and bool(layer_def[0]):         
-            with tf.variable_scope("concatenation"):
-                print('1: ',self.pooled_output,'\t 2: ', self.reduce_output.shape)
-
-                from_shape = get_shape_list(self.pooled_output, expected_rank=[2, 3])
-                self.pooled_output = tf.reshape(self.pooled_output, [from_shape[0], 1, from_shape[1]])
-                self.reduce_output = tf.reshape(self.reduce_output, [from_shape[0], 1, from_shape[1]])
-                self.concat_output = tf.concat([self.pooled_output, self.reduce_output], -1)
-                #self.concat_output = self.pooled_output+self.reduce_output
-                self.concat_output = tf.layers.flatten(self.concat_output)
-                print('flatten op::',self.concat_output.shape)
                         
     def get_cluster_output(self):
         return self.cluster_output
@@ -592,8 +427,6 @@ def get_assignment_map_from_checkpoint(tvars, init_checkpoint):
     name_to_variable = collections.OrderedDict()
     for var in tvars:
         name = var.name
-        #print('\t',name,'\t 2:',var)
-    
         #if name == 'bert/embeddings/word_embeddings:0':
         #if name == 'bert/embeddings/cluster_embeddings:0' or name == 'bert/embeddings/context_embeddings:0':
         #    continue
@@ -604,7 +437,6 @@ def get_assignment_map_from_checkpoint(tvars, init_checkpoint):
         m = re.match("^(.*):\\d+$", name)
         if m is not None:
             name = m.group(1)
-            #print(name)
         name_to_variable[name] = var
 
     init_vars = tf.train.list_variables(init_checkpoint)
@@ -612,18 +444,12 @@ def get_assignment_map_from_checkpoint(tvars, init_checkpoint):
     assignment_map = collections.OrderedDict()
     for x in init_vars:
         (name, var) = (x[0], x[1])
-        #print('name:',name,'\t val:',var)
         if name not in name_to_variable:
-            #print('name ******:',name,'\t val:',var)
             continue
-        #assignment_map[name] = name
         assignment_map[name] = name_to_variable[name]
         initialized_variable_names[name] = 1
         initialized_variable_names[name + ":0"] = 1
     
-    #print(assignment_map)
-    #print(initialized_variable_names)
-        
     return (assignment_map, initialized_variable_names)
 
 
@@ -666,6 +492,14 @@ def create_initializer(initializer_range=0.02):
     return tf.truncated_normal_initializer(stddev=initializer_range)
 
 def static_initializer(feature_locale, cluster_size, embedding_size):
+    '''
+        Initializer for cluster embedding matrix
+        
+        Args:
+            feature_locale = local path for ULE matrix
+        Returns:
+            Context Embedding Matrix
+    '''    
     
     static_embed = np.zeros((cluster_size, embedding_size), dtype=np.float32)
     feature_locale = os.path.join(feature_locale,'embedding.tsv')
@@ -710,8 +544,6 @@ def embedding_lookup(input_ids,
     if input_ids.shape.ndims == 2:
         input_ids = tf.expand_dims(input_ids, axis=[-1])
     
-    print(input_ids)
-    #print('hot embeddings::',use_one_hot_embeddings,'vocab size::',vocab_size)
     embedding_table = tf.get_variable(
         name=word_embedding_name,
         shape=[vocab_size, embedding_size],
@@ -728,18 +560,9 @@ def embedding_lookup(input_ids,
         
     input_shape = get_shape_list(input_ids)
 
-    #print('in_shape',input_shape[0:-1])
     output = tf.reshape(output,
                         input_shape[0:-1] + [input_shape[-1] * embedding_size])
-  
-    '''
-    with tf.Session() as sess:
-        tf.global_variables_initializer().run()
-        print(sess.run(embedding_table[0,0:10]))
-    '''
-  
-    print('Embedding Table:',embedding_table)
-    print('Word Embedding:',output)
+    
     return (output, embedding_table)
 
 def cluster_embedding_lookup(cluster_ids, 
@@ -749,7 +572,7 @@ def cluster_embedding_lookup(cluster_ids,
                              context_embedding_name="cluster_embeddings", 
                              use_one_hot_embeddings=False):
     
-    """Looks up words embeddings for id tensor.
+    """Looks up POS context feature embeddings for id tensor.
 
     Args:
         context_ids: int32 Tensor of shape [batch_size, seq_length] containing word ids.
@@ -772,8 +595,6 @@ def cluster_embedding_lookup(cluster_ids,
     if cluster_ids.shape.ndims == 2:
         cluster_ids = tf.expand_dims(cluster_ids, axis=[-1])
     
-    print(cluster_ids)
-    #print('hot embeddings::',use_one_hot_embeddings,'vocab size::',cluster_size)
     '''
     cluster_embedding_table = tf.get_variable(
         name=context_embedding_name,
@@ -785,7 +606,6 @@ def cluster_embedding_lookup(cluster_ids,
         name=context_embedding_name,
         initializer=static_initializer(feature_locale, cluster_size, embedding_size))
     
-    print('status:',use_one_hot_embeddings)
     if use_one_hot_embeddings:
         flat_input_ids = tf.reshape(cluster_ids, [-1])
         one_hot_input_ids = tf.one_hot(flat_input_ids, depth=cluster_size)
@@ -796,19 +616,9 @@ def cluster_embedding_lookup(cluster_ids,
         
     input_shape = get_shape_list(cluster_ids)
 
-    #print('in_shape',input_shape[0:-1])
     cluster_output = tf.reshape(cluster_output,
                         input_shape[0:-1] + [input_shape[-1] * embedding_size])
   
-    '''    
-    with tf.Session() as sess:
-        tf.global_variables_initializer().run()
-        print(sess.run(cluster_embedding_table[7:13,0:10]))
-    sys.exit()
-    '''
-  
-    print('Cluster Embedding Table:',cluster_embedding_table)
-    print('Cluster Embedding:',cluster_output)
     return (cluster_output, cluster_embedding_table)
 
 
@@ -817,11 +627,10 @@ def distance_embedding_lookup(input_ids, distance_size,
                              distance_embedding_name="distance_embeddings", 
                              use_one_hot_embeddings=False):
     
-    """Looks up words embeddings for id tensor.
+    """Generates distance embeddings for relative positioning [-1,0,1,2,.....].
 
     Args:
         embedding_size: int. Width of the word embeddings.
-        initializer_range: float. Embedding initialization range.
         distance_embedding_name: string. Name of the embedding table.
         use_one_hot_embeddings: bool. If True, use one-hot method for word
         embeddings. If False, use `tf.nn.embedding_lookup()`. One hot is better for TPUs.
@@ -839,7 +648,6 @@ def distance_embedding_lookup(input_ids, distance_size,
     
     distance_correlation_tensor = tf.matmul(distance_embedding_table, 
                                             distance_embedding_table, transpose_b=True)
-    
     dist_array = np.arange(distance_size)
     dist_attn = np.zeros((distance_size, distance_size))
     for index in range(dist_attn.shape[0]):
@@ -852,24 +660,13 @@ def distance_embedding_lookup(input_ids, distance_size,
     distance_output = tf.matmul(distance_correlation_tensor, distance_embedding_table)
     flat_mask_ids = tf.reshape(input_ids, [-1])
     one_hot_mask = tf.one_hot(flat_mask_ids, depth=distance_size)
-    print('distance mask',one_hot_mask)
     distance_output = tf.matmul(one_hot_mask, distance_output)
-    print('distance matmul',distance_output)
     
     input_shape = get_shape_list(input_ids)
     
     distance_output = tf.reshape(distance_output,
                         input_shape[0:-1] + [input_shape[-1] * embedding_size])
   
-    '''    
-    with tf.Session() as sess:
-        tf.global_variables_initializer().run()
-        print(sess.run(cluster_embedding_table[7:13,0:10]))
-    sys.exit()
-    '''
-  
-    print('Distance Embedding Table:',distance_embedding_table)
-    print('Distance Embedding:',distance_output)
     return (distance_output, distance_embedding_table)
 
 
@@ -881,13 +678,12 @@ def context_embedding_lookup(input_tensor,
                              context_embedding_name="context_embeddings", 
                              use_one_hot_embeddings=False):
     
-    """Looks up words embeddings for id tensor.
+    """Looks up Chunnk n-frame embeddings for id tensor.
 
     Args:
         context_ids: int32 Tensor of shape [batch_size, seq_length] containing word ids.
         cluster_size: int. Size of the embedding vocabulary.
         embedding_size: int. Width of the word embeddings.
-        initializer_range: float. Embedding initialization range.
         context_embedding_name: string. Name of the embedding table.
         use_one_hot_embeddings: bool. If True, use one-hot method for word
         embeddings. If False, use `tf.nn.embedding_lookup()`. One hot is better for TPUs.
@@ -904,8 +700,6 @@ def context_embedding_lookup(input_tensor,
     if context_ids.shape.ndims == 2:
         context_ids = tf.expand_dims(context_ids, axis=[-1])
     
-    print(context_ids)
-    #print('hot embeddings::',use_one_hot_embeddings,'vocab size::',cluster_size)
     '''
     cluster_embedding_table = tf.get_variable(
         name=context_embedding_name,
@@ -917,7 +711,6 @@ def context_embedding_lookup(input_tensor,
         name=context_embedding_name,
         initializer=static_initializer(feature_locale, cluster_size, embedding_size))
     
-    print('status:',use_one_hot_embeddings)
     if use_one_hot_embeddings:
         flat_input_ids = tf.reshape(context_ids, [-1])
         one_hot_input_ids = tf.one_hot(flat_input_ids, depth=cluster_size)
@@ -928,20 +721,11 @@ def context_embedding_lookup(input_tensor,
         
     input_shape = get_shape_list(context_ids)
 
-    #print('in_shape',input_shape[0:-1])
     context_output = tf.reshape(context_output,
                         input_shape[0:-1] + [input_shape[-1] * embedding_size])
   
     output += context_output
-    '''    
-    with tf.Session() as sess:
-        tf.global_variables_initializer().run()
-        print(sess.run(cluster_embedding_table[7:13,0:10]))
-    sys.exit()
-    '''
-  
-    print('Context Embedding Table:',context_embedding_table)
-    print('Context Embedding:',context_output)
+
     return (context_output, context_embedding_table)
 
 def embedding_postprocessor(input_tensor,
@@ -1008,12 +792,7 @@ def embedding_postprocessor(input_tensor,
         token_type_embeddings = tf.matmul(one_hot_ids, token_type_table)
         token_type_embeddings = tf.reshape(token_type_embeddings,
                                        [batch_size, seq_length, width])
-        print("Token Embedding:",token_type_embeddings)
-        '''
-        with tf.Session() as sess:
-            tf.global_variables_initializer().run()
-            print(sess.run(token_type_table[0,0:10]))
-        '''
+
         output += token_type_embeddings
         
     if use_position_embeddings:
@@ -1033,12 +812,9 @@ def embedding_postprocessor(input_tensor,
         # sequence has positions [0, 1, 2, ... seq_length-1], so we can just
         # perform a slice.
         
-        #print(full_position_embeddings)
         position_embeddings = tf.slice(full_position_embeddings, [0, 0],
                                      [seq_length, -1])
-        #print(position_embeddings)
         num_dims = len(output.shape.as_list())
-        #print(output.shape.as_list())
 
         # Only the last two dimensions are relevant (`seq_length` and `width`), so
         # we broadcast among the first dimensions, which is typically just
@@ -1049,13 +825,7 @@ def embedding_postprocessor(input_tensor,
         position_broadcast_shape.extend([seq_length, width])
         position_embeddings = tf.reshape(position_embeddings,
                                        position_broadcast_shape)
-        print("Position Embedding:",position_embeddings)
         
-        '''
-        with tf.Session() as sess:
-            tf.global_variables_initializer().run()
-            print(sess.run(full_position_embeddings[0,0:10]))
-        '''
         output += position_embeddings
         
     if use_entity_embedding:
@@ -1074,15 +844,9 @@ def embedding_postprocessor(input_tensor,
         entity_type_embeddings = tf.matmul(one_hot_ids, entity_type_table)
         entity_type_embeddings = tf.reshape(entity_type_embeddings,
                                        [batch_size, seq_length, width])
-        print("Entity Embedding:",entity_type_embeddings)
-        '''
-        with tf.Session() as sess:
-            tf.global_variables_initializer().run()
-            print(sess.run(entity_type_table[0,0:10]))
-        '''
+
         output += entity_type_embeddings
 
-    print('Final Embedding shape:',output)
     output = layer_norm_and_dropout(output, dropout_prob)
 
     return output
@@ -1095,6 +859,8 @@ def context_postprocessor(input_tensor,
                             initializer_range=0.02,
                             dropout_prob=0.1):
         
+    """Performs various post-processing on a context embedding tensor. """
+    
     input_shape = get_shape_list(input_tensor, expected_rank=3)
     batch_size = input_shape[0]
     seq_length = input_shape[1]
@@ -1110,23 +876,15 @@ def context_postprocessor(input_tensor,
             name=mask_embedding_name,
             shape=[2, width],
             initializer=create_initializer(initializer_range))
-        print(mask_type_table)
         
         flat_mask_ids = tf.reshape(mask_ids, [-1])
         one_hot_mask = tf.one_hot(flat_mask_ids, depth=2)
-        print('after',one_hot_mask)
         mask_type_embeddings = tf.matmul(one_hot_mask, mask_type_table)
         mask_type_embeddings = tf.reshape(mask_type_embeddings,
                                        [batch_size, seq_length, width])
-        print("Mask Embedding:",mask_type_embeddings)
-        '''
-        with tf.Session() as sess:
-            tf.global_variables_initializer().run()
-            print(sess.run(mask_type_embeddings[0,0:10]))
-        '''
+
         output += mask_type_embeddings
         
-    print('Final Embedding shape:',output)
     #output = layer_norm_and_dropout(output, dropout_prob)
 
     return output
@@ -1162,7 +920,6 @@ def create_attention_mask_from_input_mask(from_tensor, to_mask):
 
     # Here we broadcast along two dimensions to create the mask.
     mask = broadcast_ones * to_mask
-    print('MASKED:',mask)
   
     return mask
 
@@ -1241,12 +998,10 @@ def attention_layer(from_tensor,
 
     def transpose_for_scores(input_tensor, batch_size, num_attention_heads, seq_length, width):
       
-        print(input_tensor,'\t',batch_size,'\t',num_attention_heads,'\t',seq_length,'\t',width)
         output_tensor = tf.reshape(
             input_tensor, [batch_size, seq_length, num_attention_heads, width])
 
         output_tensor = tf.transpose(output_tensor, [0, 2, 1, 3])
-        #print(output_tensor.shape)
         return output_tensor
 
     from_shape = get_shape_list(from_tensor, expected_rank=[2, 3])
@@ -1276,11 +1031,8 @@ def attention_layer(from_tensor,
 
     from_tensor_2d = reshape_to_matrix(from_tensor)
     to_tensor_2d = reshape_to_matrix(to_tensor)
-    print('from_tensor::',from_tensor_2d.shape,'\t to_tensor::',to_tensor_2d.shape)
 
-    #print(query_act,'\t',key_act,'\t',value_act)
     # `query_layer` = [B*F, N*H]
-    print('num_attention_heads::',num_attention_heads,'\tsize_per_head::',size_per_head)
     query_layer = tf.layers.dense(
         from_tensor_2d,
         num_attention_heads * size_per_head,
@@ -1288,7 +1040,6 @@ def attention_layer(from_tensor,
         name="query",
         kernel_initializer=create_initializer(initializer_range))
     
-    print('query_layer::',query_layer)
 
     # `key_layer` = [B*T, N*H]
     key_layer = tf.layers.dense(
@@ -1297,7 +1048,6 @@ def attention_layer(from_tensor,
         activation=key_act,
         name="key",
         kernel_initializer=create_initializer(initializer_range))
-    print('key_layer::',key_layer)
     
     # `value_layer` = [B*T, N*H]
     value_layer = tf.layers.dense(
@@ -1306,9 +1056,7 @@ def attention_layer(from_tensor,
         activation=value_act,
         name="value",
         kernel_initializer=create_initializer(initializer_range))
-    print('value_layer::',value_layer)
     
-    #print(query_layer,'\t',key_layer,'\t',value_layer)
     # `query_layer` = [B, N, F, H]
     query_layer = transpose_for_scores(query_layer, batch_size,
                                      num_attention_heads, from_seq_length,
@@ -1324,7 +1072,7 @@ def attention_layer(from_tensor,
     attention_scores = tf.matmul(query_layer, key_layer, transpose_b=True)
     #attention_scores = tf.multiply(attention_scores, 1.0 / math.sqrt(float(size_per_head)))
     
-    ''' distance correlation attention'''
+    ''' distance ajusted attention mechanism '''
     dist_array = np.arange(from_seq_length)
     dist_attn = np.zeros((from_seq_length, from_seq_length))
     for index in range(dist_attn.shape[0]):
@@ -1335,15 +1083,11 @@ def attention_layer(from_tensor,
     marg_dist = tf.multiply(tf.cast(attention_mask, tf.float32), marg_dist)
     marg_dist = tf.expand_dims(marg_dist, axis=[1])
     attention_scores = (attention_scores + marg_dist)
-    print('marg_dist::',marg_dist)
 
     
     attention_scores = tf.multiply(attention_scores, 1.0 / math.sqrt(float(size_per_head)))
-    print('attention scores::',attention_scores)
-    print('attention mask::',attention_mask)
     
     #attention_scores = tf.linalg.band_part(attention_scores,0, -1)
-    #print('upper half attention score::',attention_scores)
     
     if attention_mask is not None:
         # `attention_mask` = [B, 1, F, T]
@@ -1370,9 +1114,7 @@ def attention_layer(from_tensor,
 
     # Normalize the attention scores to probabilities.
     # `attention_probs` = [B, N, F, T]
-    print('weighted attention::',attention_scores)
     attention_probs = tf.nn.softmax(attention_scores)
-    print('softmax attention::',attention_probs)
 
     # This is actually dropping out entire tokens to attend to, which might
     # seem a bit unusual, but is taken from the original Transformer paper.
@@ -1392,7 +1134,6 @@ def attention_layer(from_tensor,
     # `context_layer` = [B, F, N, H]
     context_layer = tf.transpose(context_layer, [0, 2, 1, 3])
 
-    print('b4_context:',context_layer.shape)
     if do_return_2d_tensor:
         # `context_layer` = [B*F, N*H]
         context_layer = tf.reshape(
@@ -1404,7 +1145,6 @@ def attention_layer(from_tensor,
             context_layer,
             [batch_size, from_seq_length, num_attention_heads * size_per_head])
 
-    print('aftr_context:',context_layer.shape)
   
     return context_layer
 
@@ -1484,10 +1224,8 @@ def transformer_model(input_tensor,
 
     all_layer_outputs = []
     for layer_idx in range(num_hidden_layers):
-        print('Layer::',layer_idx)
         with tf.variable_scope("layer_%d" % layer_idx):
             layer_input = prev_output
-            print('Attention Input::',layer_input)
 
             with tf.variable_scope("attention"):
                 attention_heads = []
@@ -1525,11 +1263,8 @@ def transformer_model(input_tensor,
                         attention_output,
                         hidden_size,
                         kernel_initializer=create_initializer(initializer_range))
-                    #print('dense output::',attention_output)
                     attention_output = dropout(attention_output, hidden_dropout_prob)
-                    #print('dropout::',attention_output)
                     attention_output = layer_norm(attention_output + layer_input)
-                    print('1st norm op::',attention_output.shape)
 
             # The activation is only applied to the "intermediate" hidden layer.
             with tf.variable_scope("intermediate"):
@@ -1538,7 +1273,6 @@ def transformer_model(input_tensor,
                     intermediate_size,
                     activation=intermediate_act_fn,
                     kernel_initializer=create_initializer(initializer_range))
-                print('intermediate op::',intermediate_output.shape)
 
             # Down-project back to `hidden_size` then add the residual.
             with tf.variable_scope("output"):
@@ -1548,7 +1282,6 @@ def transformer_model(input_tensor,
                     kernel_initializer=create_initializer(initializer_range))
                 layer_output = dropout(layer_output, hidden_dropout_prob)
                 layer_output = layer_norm(layer_output + attention_output)
-                print('2nd norm op::',layer_output.shape)
                 prev_output = layer_output
                 all_layer_outputs.append(layer_output)
     
@@ -1557,7 +1290,6 @@ def transformer_model(input_tensor,
         for layer_output in all_layer_outputs:
             final_output = reshape_from_matrix(layer_output, input_shape)
             final_outputs.append(final_output)
-        print('Final output::',final_outputs)
         return final_outputs
     else:
         final_output = reshape_from_matrix(prev_output, input_shape)

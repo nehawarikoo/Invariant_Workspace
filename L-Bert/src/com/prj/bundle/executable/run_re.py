@@ -12,7 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""BERT finetuning runner."""
+"""L-BERT finetuning runner."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -246,48 +246,6 @@ class DataProcessor(object):
                 lines.append(line)
             return lines
 
-
-class BioBERTProcessor(DataProcessor):
-    """Processor for the BioBERT data set (GLUE version)."""
-    
-    def get_train_examples(self, data_dir):
-        """See base class."""
-        return self._create_examples(
-            self._read_tsv(os.path.join(data_dir, "train.tsv")), "train")
-    
-    def get_dev_examples(self, data_dir):
-        """See base class."""
-        return self._create_examples(
-            self._read_tsv(os.path.join(data_dir, "dev.tsv")), "dev")
-
-    def get_test_examples(self, data_dir):
-        """See base class."""
-        return self._create_examples(
-            self._read_tsv(os.path.join(data_dir, "test.tsv")), "test")
-
-    def get_labels(self):
-        """See base class."""
-        return ["0", "1"]
-
-    def _create_examples(self, lines, set_type):
-        """Creates examples for the training and dev sets."""
-        examples = []
-        for (i, line) in enumerate(lines):
-            # Only the test set has a header
-            if set_type == "test" and i == 0:
-                continue
-            guid = "%s-%s" % (set_type, i)
-            if set_type == "test":
-                text_a = tokenization.convert_to_unicode(line[1])
-                label = "0"
-            else:
-                text_a = tokenization.convert_to_unicode(line[0])
-                label = tokenization.convert_to_unicode(line[1])
-            examples.append(
-              InputExample(guid=guid, text_a=text_a, text_b=None, label=label))
-        return examples
-
-
 class LBERTProcessor(DataProcessor):
             
     def get_train_examples(self, data_dir, text_type):
@@ -328,12 +286,7 @@ class LBERTProcessor(DataProcessor):
                 label = tokenization.convert_to_unicode(line[1])
             examples.append(
               InputExample(guid=guid, text_a=text_a, text_b=None, label=label))
-            
-        '''
-        for entry in examples:
-            print(entry.guid,'\t',entry.label,'\n',entry.text_a,'\n')
-        '''
-            
+                        
         return examples
     
     
@@ -377,12 +330,7 @@ class CLBERTProcessor(DataProcessor):
                 label = tokenization.convert_to_unicode(line[1])
             examples.append(
               InputExample(guid=guid, text_a=text_a, text_b=None, label=label))
-            
-        '''
-        for entry in examples:
-            print(entry.guid,'\t',entry.label,'\n',entry.text_a,'\n')
-        '''
-            
+                       
         return examples
     
 class BioBERTGeniaProcessor(DataProcessor):
@@ -453,51 +401,18 @@ def feature_doprout(seq_activation, ex_index):
     seq_length = len(seq_set)
     drop_index = seq_length-int(np.round(seq_length*dropout_rate))
     drop_values = seq_set[drop_index:seq_length]
-    #print('initial::',seq_dict)
-    #print('sorted values::',seq_set)
-    #print('drop value',drop_values)
     for (key,value) in six.iteritems(seq_dict):
         if value in drop_values:
             seq_dict.update({key:-1.0})
     
-    #print('after::',seq_dict)
-    
     update_dict = dict(filter(lambda currVal : currVal[1] != -1.0, seq_dict.items()))
-    #print('update:',update_dict)
     relevant_indices = list(update_dict.keys())
     seq_activation = list(update_dict.values())
     if len(update_dict) < len(seq_dict):
         a=1
-        print(len(update_dict),'\t', len(seq_dict),'\t',ex_index)
-        #tf.logging.INFO('%s :reduced from %s to %s ' % (ex_index, len(seq_dict), len(update_dict)))
     else:
         a=1
-        #print(ex_index)
-    
-    '''
-    for index, item in enumerate(seq_activation):
-        item = float(np.round(item*10))
-        if item < 2.0:
-            item = 2.0
-        seq_activation[index] = item
-    '''
-    '''
-    seq_dict = dict(enumerate(seq_activation))
-    seq_tuple = sorted(seq_dict.items(), key=itemgetter(1), reverse=True)
-    seq_length = len(seq_tuple)
-    drop_index = seq_length-int(np.round(seq_length*dropout_rate))
-    for index in range(drop_index, seq_length):
-        temp = seq_tuple[index]
-        seq_tuple[index] = (temp[0], 1.0)
-        
-    for index in range(0, drop_index):
-        temp = seq_tuple[index]
-        seq_tuple[index] = (temp[0], 2.0)
-    
-    for key, value in dict(sorted(seq_tuple, key=itemgetter(0))).items():
-        seq_activation[key] = value
-    '''
-    
+       
     return(relevant_indices, seq_activation)
 
 def pop_feature(index_list, decoy_list):
@@ -509,52 +424,6 @@ def pop_feature(index_list, decoy_list):
     
     return(return_list)
 
-def prune_features(relevant_indices, cluster_map, context_map, context, example_text, pos_text):
-
-    cluster_map = pop_feature(relevant_indices, cluster_map)
-    context_map = pop_feature(relevant_indices, context_map)
-    context = pop_feature(relevant_indices, context)
-    text_list = list(example_text.split())
-    text_list = pop_feature(relevant_indices, text_list)
-    example_text = ' '.join(i for i in text_list)
-    pos_list = list(pos_text.split())
-    pos_list = pop_feature(relevant_indices, pos_list)
-    pos_text = ' '.join(i for i in pos_list)
-    
-    return(cluster_map, context_map, context, example_text, pos_text)
-
-
-def shortest_path_prunning(example_text, pos_tag_text, chunk_text):
-    
-    max_length = len(example_text.split())
-    index_list = []
-    for index, item in enumerate(list(example_text.split())):
-        if re.findall('BENTITY\d+', item):
-            index_list.append(index)
-            # preceding
-            pre_list = list(filter(lambda currVal: currVal > -1, list(range(index-2, index))))
-            #print(item,'\t pre>>>',pre_list)
-            if len(pre_list) > 0:
-                index_list.extend(pre_list)
-            # succeeding
-            suf_list = list(filter(lambda currVal: currVal < max_length, list(range(index, index+3))))
-            #print(item,'\t suf>>>',suf_list)
-            if len(suf_list) > 0:
-                index_list.extend(suf_list)
-    
-    index_list = list(set(index_list))
-    #print(index_list)
-    org_list = list(example_text.split())
-    pos_list = list(pos_tag_text.split())
-    chunk_list = list(chunk_text.split())
-    org_list = list(map(lambda cv : org_list[cv], index_list))
-    pos_list = list(map(lambda cv : pos_list[cv], index_list))
-    chunk_list = list(map(lambda cv : chunk_list[cv], index_list))
-    example_text = ' '.join(i for i in org_list)
-    pos_tag_text = ' '.join(i for i in pos_list)
-    chunk_text = ' '.join(i for i in chunk_list)
-    
-    return(example_text, pos_tag_text, chunk_text)
 
 def convert_single_example(ex_index, example, pos_example, chunk_example, 
                            label_list, max_seq_length, instance, tokenizer, 
@@ -577,44 +446,20 @@ def convert_single_example(ex_index, example, pos_example, chunk_example,
     for (i, label) in enumerate(label_list):
         label_map[label] = i
 
-    '''
-    example.text_a, pos_example.text_a, chunk_example.text_a = shortest_path_prunning(
-        example.text_a, pos_example.text_a, chunk_example.text_a)
-    
-    if example.text_b:
-        example.text_b, pos_example.text_b, chunk_example.text_b = shortest_path_prunning(
-            example.text_a, pos_example.text_a, chunk_example.text_b)
-    '''
-    
     posCluster_map_a, chunkCluster_map_a, context_a, seq_activation_a = con_tokenizer.convert_to_context(
         example.text_a, pos_example.text_a, chunk_example.text_a, max_seq_length, instance)
-    #print(example.text_a)
-    #print(pos_example.text_a)
-    #print(context_a)
-    #invariant pruning
-    '''
-    relevant_indices, seq_activation_a = feature_doprout(seq_activation_a, ex_index)
-    posCluster_map_a, chunkCluster_map_a, context_a, example.text_a, pos_example.text_a = prune_features(
-        relevant_indices, posCluster_map_a, chunkCluster_map_a, context_a, example.text_a, pos_example.text_a)
-    '''
-    
+
     context_b = None    
     if example.text_b:
         posCluster_map_b, chunkCluster_map_b, context_b, seq_activation_b = con_tokenizer.convert_to_context(
         example.text_b, pos_example.text_b, chunk_example.text_b, max_seq_length, instance)
-        '''
-        relevant_indices, seq_activation_b = feature_doprout(seq_activation_b, ex_index)
-        posCluster_map_b, chunkCluster_map_b, context_b, example.text_b, pos_example.text_b = prune_features(
-            relevant_indices, posCluster_map_b, chunkCluster_map_b, context_b, example.text_b, pos_example.text_b)
-        '''
+        
 
     temp_list = []
     for item in list(example.text_a.split()):
         if re.match('^BENTITY1', item):
-            #temp_list.append('@GENE$')
             temp_list.append(item)
         elif re.match('^BENTITY2', item):
-            #temp_list.append('@DISEASE$')
             temp_list.append(item)
         else:
             temp_list.append(item)
@@ -622,15 +467,12 @@ def convert_single_example(ex_index, example, pos_example, chunk_example,
     text_a = ' '.join(i for i in temp_list)
     tokens_a, posTokens_a = tokenizer.tokenize(text_a)
     if len(tokens_a) != len(posTokens_a):
-        print(tokens_a,'\n',posTokens_a)
-        sys.exit()
+        tf.logging.info('Inconsistent token size %s' %len(tokens_a) +' and %s ' %len(posTokens_a))
     tokens_b = None
     if example.text_b:
         temp_list = []
         for item in list(example.text_b.split()):
             if re.findall('BENTITY\d+', item):
-                #temp_list.append('@'+item+'$')
-                #temp_list.append('protein')
                 temp_list.append(item)
             else:
                 temp_list.append(item)
@@ -683,7 +525,9 @@ def convert_single_example(ex_index, example, pos_example, chunk_example,
         for token in tokens_b:
             tokens.append(token)
         tokens.append("[SEP]")
-    
+    '''
+    Appending tokenized POS contexts for original lexical feature representation
+    '''
     contexts = []
     contexts.append("[CLS]")
     for context in context_a:
@@ -695,16 +539,17 @@ def convert_single_example(ex_index, example, pos_example, chunk_example,
             contexts.append("["+(','.join(value for value in context))+"]")
         contexts.append("[SEP]")
     
+    '''
+    Secondary activation over layer over lexical features (Optional)
+    '''
     activations = []
     activations.append(1.0)
     for mapped_value in posTokens_a:
-        #activations.append(seq_activation_a[mapped_value])
         activations.append(1.0)
     activations.append(1.0)
     
     if context_b:
         for mapped_value in posTokens_b:
-            #activations.append(seq_activation_b[mapped_value])
             activations.append(1.0)
         activations.append(1.0)
 
@@ -712,43 +557,33 @@ def convert_single_example(ex_index, example, pos_example, chunk_example,
     if bool(layer_def[0]):
         input_ids = tokenizer.convert_tokens_to_ids(tokens)
 
-    
+    '''
+    Lexical Embedding (Pos tag cluster feature based) : Appending POS lexical context id to map features
+    '''
     cluster_ids = []
     if bool(layer_def[1]):
         cluster_ids.append(7)
-        '''
-        for mapped_value in posCluster_map_a:
-            cluster_ids.append(mapped_value)
-        '''
         for mapped_value in posTokens_a:
             cluster_ids.append(posCluster_map_a[mapped_value])
         cluster_ids.append(8)
         
         if context_b:
-            '''
-            for mapped_value in posCluster_map_b:
-                cluster_ids.append(mapped_value)
-            '''
             for mapped_value in posTokens_b:
                 cluster_ids.append(posCluster_map_b[mapped_value])
             cluster_ids.append(8)
-            
+       
+    '''
+    (Optional)
+    Lexical Embedding (Chunk tag Cluster feature based) : Appending Chunk Tag lexical context id to map features
+    '''
     context_ids = []
     if bool(layer_def[1]):
         context_ids.append(7)
-        '''
-        for mapped_value in chunkCluster_map_a:
-            context_ids.append(mapped_value)
-        '''
         for mapped_value in posTokens_a:
             context_ids.append(chunkCluster_map_a[mapped_value])
         context_ids.append(8)
         
         if context_b:
-            '''
-            for mapped_value in chunkCluster_map_b:
-                context_ids.append(mapped_value)
-            '''
             for mapped_value in posTokens_b:
                 context_ids.append(chunkCluster_map_b[mapped_value])
             context_ids.append(8)
@@ -781,10 +616,11 @@ def convert_single_example(ex_index, example, pos_example, chunk_example,
     input_mask = []
     if bool(layer_def[3]) and bool(layer_def[0]):
         input_mask = [1.0] * len(tokens)
-        #input_mask[0] = 1.0
-        #input_mask[len(tokens)-1] = 1.0
-        #input_mask = activations
         
+    '''
+    (Optional)
+    Activation mask for lexical features
+    '''
     context_mask = []
     if bool(layer_def[1]):
         context_mask.append(1)
@@ -804,44 +640,12 @@ def convert_single_example(ex_index, example, pos_example, chunk_example,
                 else:
                     context_mask.append(1)
             context_mask.append(1)
-        '''
-        for value in contexts:
-            if value == '[CLS]' or value == '[SEP]' or value == '[BTERM]' or value == '[CTERM]' or re.findall('BENTITY\d+',value):
-            #if re.findall('BENTITY\d+',value):
-                context_mask.append(2)
-            else:
-                context_mask.append(1)
-        index_array = np.where(np.array(context_mask)==1)[0]
-        for i in range(np.amin(index_array),np.amax(index_array)+1):
-            context_mask[i] = 1
-        '''
-
-    ''' Shortest path trick '''
-    '''
-    startIndex = 0
-    if input_ids.count(1475) >= 1:
-        startIndex = input_ids.index(1475)
-    endIndex= len(tokens)
-    if input_ids.count(1477) >= 1:
-        endIndex = input_ids.index(1477)+1
-    startTag_index = input_ids.index(101)
-    endTag_index = input_ids.index(102)
-    screenList = list(range(startIndex, endIndex))
-    for i in range(len(tokens)):
-        if(i not in screenList) and (startTag_index != i) and (endTag_index != i):
-            #input_ids[i] = 0
-            #cluster_ids[i] = 0
-            #context_ids[i] = 0
-            input_mask[i] = 1
-        if(i in screenList):
-            input_mask[i] = 2
-    '''
+        
 
     if len(input_ids) != len(cluster_ids) and len(input_ids) != len(context_ids):
-        print(len(input_ids),'\t',len(cluster_ids),'\t',len(context_ids))
-        print(len(tokens),'\t', len(posTokens_a))
-        print(tokens,'\n',input_ids,'\n', cluster_ids,'\n',context_ids)
-        sys.exit()
+        tf.logging.info('%s' %len(input_ids) +'\t %s' %len(cluster_ids) +'\t %s' %len(context_ids))
+        tf.logging.info('%s' %len(tokens)+'\t %s' %len(posTokens_a))
+        tf.logging.info('%s' %tokens +'\n %s' %input_ids +'\n %s' %cluster_ids +'\n %s' %context_ids)
     
     
     # Zero-pad up to the sequence length.
@@ -852,7 +656,6 @@ def convert_single_example(ex_index, example, pos_example, chunk_example,
     input_mask = uniform_padding(bool(layer_def[3]), 0.0, input_mask, max_seq_length)
     context_mask = uniform_padding(bool(layer_def[3]), 0, context_mask, max_seq_length)
 
-    #print(example.label,"\t",label_map,'\t',example.guid)
     label_id = label_map[example.label]
     if ex_index < 5:
         tf.logging.info("*** Example ***")
@@ -889,9 +692,6 @@ def file_based_convert_examples_to_features(
     feature_locale, layer_def, tokenizer, con_tokenizer, output_file):
     """Convert a set of `InputExample`s to a TFRecord file."""
     
-    #sequence_locale = os.path.join(feature_locale, "sequence.txt")    
-    #feature_locale = os.path.join(feature_locale, "feature.txt")
-    #instance = featureInvariance.SemanticInvariance(embed_locale, feature_locale, sequence_locale)
     instance = featureInvariance.SemanticInvariance(embed_locale, feature_locale)
     writer = tf.python_io.TFRecordWriter(output_file)
     for (ex_index, example) in enumerate(examples):
@@ -925,17 +725,10 @@ def file_based_convert_examples_to_features(
             [int(feature.is_real_example)])
     
         # creates data_set in a Json format
-        #print(features.values())
-
         # a json file for each example
         tf_example = tf.train.Example(features=tf.train.Features(feature=features))
         writer.write(tf_example.SerializeToString())
-        
-        '''
-        if ex_index == 5:
-            break
-        '''
-        
+                
     writer.close()
 
 
@@ -1117,9 +910,11 @@ def create_model(bert_config, is_training, input_ids, cluster_ids, context_ids,
     elif bool(layer_def[0]):
         output_layer = model.get_pooled_output()
     
-    print('o/p shape::',output_layer)
     input_shape = get_shape_list(output_layer, expected_rank=3)
 
+    '''
+    Logsum evaluation of the terminal outputs from [CLS] and [SEP] tokens
+    '''
     first_token_tensor = tf.squeeze(output_layer[:, 0:1, :], axis=1)
     first_token_tensor = tf.reshape(first_token_tensor, [input_shape[0], 1, input_shape[2]])
     index = tf.where(tf.equal(input_ids, 102))
@@ -1132,16 +927,7 @@ def create_model(bert_config, is_training, input_ids, cluster_ids, context_ids,
     #output_layer = tf.norm(output_layer, axis=1)
     #context_mask = tf.cast(context_mask, tf.float32)
     #output_layer = tf.concat([output_layer, context_mask], 1)
-    '''
-    conv = tf.keras.layers.Dense(200, activation='relu')(output_layer)
-    print('conv::',conv)
-    conv = tf.keras.layers.Dense(10, activation='sigmoid')(conv)
-    print('dense::',conv)
-    a_layer = tf.layers.flatten(conv)
-    print('flatten::',a_layer)
-    logits = tf.keras.layers.Dense(2, activation='sigmoid')(a_layer)
-    print('dense::',logits)
-    '''
+    
     #hidden_size = logits.shape[-1].value
     hidden_size = output_layer.shape[-1].value
     
@@ -1152,7 +938,7 @@ def create_model(bert_config, is_training, input_ids, cluster_ids, context_ids,
     output_bias = tf.get_variable(
         "output_bias", [num_labels], initializer=tf.zeros_initializer())
     
-    print('op:',output_layer,'\n weight:',output_weights,'\n bias:',output_bias)
+    #tf.logging.info('op: %s' %output_layer +'\n weight: %s' %output_weights +'\n bias: %s' %output_bias)
   
     with tf.variable_scope("loss"):
 
@@ -1166,9 +952,6 @@ def create_model(bert_config, is_training, input_ids, cluster_ids, context_ids,
         probabilities = tf.nn.softmax(logits, axis=-1)
         log_probs = tf.nn.log_softmax(logits, axis=-1)
         
-        #sess = tf.Session()
-        #sess.run(tf.global_variables_initializer())
-        print("\n LOGITS::",logits)
     
         one_hot_labels = tf.one_hot(labels, depth=num_labels, dtype=tf.float32)
 
@@ -1192,7 +975,7 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint, layer_def, kernel
         for name in sorted(features.keys()):
             tf.logging.info("  name = %s, shape = %s" % (name, features[name].shape))
             
-        print("FEATURES",features["label_ids"])
+        #tf.logging.info('FEATURE %s' %features["label_ids"])
         input_ids = features["input_ids"]
         cluster_ids = features["cluster_ids"]
         context_ids = features["context_ids"]
@@ -1213,7 +996,7 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint, layer_def, kernel
             context_mask, segment_ids, label_ids, num_labels, use_one_hot_embeddings, 
             layer_def, feature_locale, kernel_size)
 
-        print(total_loss)
+        tf.logging.info(%total_loss)
         
         tvars = tf.trainable_variables()
         initialized_variable_names = {}
@@ -1226,10 +1009,8 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint, layer_def, kernel
                 def tpu_scaffold():
                     tf.train.init_from_checkpoint(init_checkpoint, assignment_map)
                     return tf.train.Scaffold()
-                print('scaffold')
                 scaffold_fn = tpu_scaffold
             else:
-                print('no scaffold')
                 tf.train.init_from_checkpoint(init_checkpoint, assignment_map)
 
         tf.logging.info("**** Trainable Variables ****")
@@ -1243,7 +1024,6 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint, layer_def, kernel
     
         output_spec = None
         if mode == tf.estimator.ModeKeys.TRAIN:
-            print('here 1::',mode)
             train_op = optimization.create_optimizer(
                 total_loss, learning_rate, num_train_steps, num_warmup_steps, use_tpu)
                         
@@ -1254,7 +1034,6 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint, layer_def, kernel
                 scaffold_fn=scaffold_fn)
       
         elif mode == tf.estimator.ModeKeys.EVAL:
-            print('here 2::',mode)
             def metric_fn(per_example_loss, label_ids, logits, is_real_example):
                 predictions = tf.argmax(logits, axis=-1, output_type=tf.int32)
                 accuracy = tf.metrics.accuracy(
@@ -1274,28 +1053,10 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint, layer_def, kernel
                 eval_metrics=eval_metrics,
                 scaffold_fn=scaffold_fn)
         else:
-            print('here 3::',mode)
             output_spec = tf.contrib.tpu.TPUEstimatorSpec(
                 mode=mode,
                 predictions={"probabilities": probabilities},
                 scaffold_fn=scaffold_fn)
-        
-        print(output_spec)
-    
-        '''
-        if mode != tf.estimator.ModeKeys.TRAIN and mode != tf.estimator.ModeKeys.EVAL:
-
-            sess = tf.Session()
-            sess.run(tf.global_variables_initializer())        
-            varb = list(map(lambda x : x.name, tf.trainable_variables()))
-            varbV = sess.run(varb)
-            for i,v in zip(varb, varbV):
-                if i=="bert/pooler/dense/kernel:0":
-                    print(i,'\t',v[0:3,0:10])
-                elif i=="bert/pooler/dense/bias:0":
-                    print(i,'\t',v[0:3])
-            sys.exit()
-        '''
         
         return output_spec
 
@@ -1381,10 +1142,6 @@ def main(_):
     tf.logging.set_verbosity(tf.logging.INFO)
     
     processors = {
-        "gad": BioBERTProcessor,
-        "polysearch": BioBERTProcessor,
-        "mirnadisease": BioBERTProcessor,
-        "euadr": BioBERTProcessor,
         "isp":LBERTProcessor,
         "cisp":CLBERTProcessor,
         "pisp": BioBERTGeniaProcessor,

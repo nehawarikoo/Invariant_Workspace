@@ -308,10 +308,7 @@ class FullTokenizer(object):
             wordIndex += 1
 
         if len(split_array)-1 != max(pos_tokens):
-            print('error in :',text)
-            print(pos_tokens)
-            print(split_array,'\n',self.basic_tokenizer.tokenize(text))
-            sys.exit()
+            tf.logging.info('Tokenization error: %s' %text)
         return split_tokens, pos_tokens
 
     def convert_tokens_to_ids(self, tokens):

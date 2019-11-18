@@ -21,7 +21,6 @@ if args.task == "binary":
     pred = [preddf.iloc[i].tolist() for i in preddf.index]
     pred_class = [np.argmax(v) for v in pred]
     pred_prob_one = [v[1] for v in pred]
-    print(pred_class)
 
     p,r,f,s = sklearn.metrics.precision_recall_fscore_support(y_pred=pred_class, y_true=testdf["label"])
     results = dict()

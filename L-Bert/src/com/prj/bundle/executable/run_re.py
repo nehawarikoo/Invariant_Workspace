@@ -12,7 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""L-BERT finetuning runner."""
+"""L-BERT implementation - sentence level classification task"""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -31,10 +31,10 @@ from operator import itemgetter
 import six
 from sklearn import svm
 
-if socket.gethostname() == 'iaslgpu3':
-    sys.path.append('/home/neha/nlp/NeonWorkspace_1.6/L-Bert')
-elif  socket.gethostname() == 'iaslgpu5':
-    sys.path.append('/home/iasl/Neha_W/NeonWorkspace_1.6/L-Bert')
+if socket.gethostname() == 'GPU_1':
+    sys.path.append('../L-Bert')
+elif  socket.gethostname() == 'GPU_2':
+    sys.path.append('../L-Bert')
 
 
 from src.com.prj.bundle.modelling import modeling
@@ -446,6 +446,9 @@ def convert_single_example(ex_index, example, pos_example, chunk_example,
     for (i, label) in enumerate(label_list):
         label_map[label] = i
 
+    '''
+    Generate n-frame context based features from the raw text
+    '''
     posCluster_map_a, chunkCluster_map_a, context_a, seq_activation_a = con_tokenizer.convert_to_context(
         example.text_a, pos_example.text_a, chunk_example.text_a, max_seq_length, instance)
 

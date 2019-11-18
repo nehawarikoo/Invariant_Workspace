@@ -118,8 +118,10 @@ def printable_text(text):
             raise ValueError("Unsupported string type: %s" % (type(text)))
     else:
         raise ValueError("Not running on Python2 or Python 3?")
-
+        
 def manage_print(raw_data):
+
+    ''' Print n-features '''
     
     string_data = ""
     if isinstance(raw_data, list):
@@ -180,6 +182,17 @@ class ContextTokenizer(object):
         
     def featureConvolution(self, org_Seq, pos_Seq, chunk_Seq, instance):
 
+        ''' Feature convolution run over the raw sentence to extract local n-frames '''
+        '''
+        Args: 
+            org_Seq = Word text sequence
+            pos_Seq = Pos Tag sequence
+            chunk_Seq = Phrase Chunk sequence
+         
+        Return:
+            context feature id vector e.g. [7, 10, 678, 465]
+        '''
+        
         activation_sequence = []
         org_sequence = []
         posCluster_sequence = []
@@ -194,7 +207,7 @@ class ContextTokenizer(object):
             chunkBufferList = list(chunk_Seq[startIndex:endIndex])
             if(orgBufferList.count('#') == self.kernelSize):
                 break
-            else:
+            #else:
                 #tf.logging.info("%s" %orgBufferList+"\t %s" %posBufferList)
                 
                 '''
@@ -211,6 +224,7 @@ class ContextTokenizer(object):
                 
                 lead_posCluster_id, complete_posCluster_id = instance.map_context_to_pattern(
                     posBufferList, "pos")
+                
                 '''
                 lead_chunkCluster_id, complete_chunkCluster_id = instance.map_context_to_pattern(
                     chunkBufferList, "chunk")
@@ -221,26 +235,16 @@ class ContextTokenizer(object):
                 entityTerm = False
                 #if len(list(filter(lambda currVal: re.findall('BENTITY\d+', currVal), orgBufferList))) > 0:
                 if len(re.findall('BENTITY\d+', orgBufferList[0])) > 0:
-                    #org_sequence.append(['BTERM'])
-                    #posCluster_sequence.append(3)
-                    #posCluster_sequence.append(4)
-                    #chunkCluster_sequence.append(3)
-                    #chunkCluster_sequence.append(4)
                     entityTerm = True
+                    
                 if entityTerm:
                     org_sequence.append(orgBufferList)
                     posCluster_sequence.append(complete_posCluster_id)
                     chunkCluster_sequence.append(lead_posCluster_id)
-                    #org_sequence.append(['CTERM'])
-                    #posCluster_sequence.append(5)
-                    #posCluster_sequence.append(6)
-                    #chunkCluster_sequence.append(5)
-                    #chunkCluster_sequence.append(6)
                 else:
                     org_sequence.append(orgBufferList)
                     posCluster_sequence.append(complete_posCluster_id)
                     chunkCluster_sequence.append(lead_posCluster_id)
-                    
                     
                 startIndex = startIndex+self.strideSize
         
@@ -263,11 +267,14 @@ class ContextTokenizer(object):
             tf.logging.info("critical error with pre-processing ~ featureConvolution()")
             tf.logging.info("%s " % len(org_Array) +" %s" % len(pos_Array) +" %s" % len(chunk_Array))
             tf.logging.info("%s " %org_Array +" %s" %pos_Array +" %s" %chunk_Array)
-            sys.exit()
         
         return(org_Array, pos_Array, chunk_Array)
     
     def convert_to_context(self, org_Seq, pos_Seq, chunk_Seq, max_seq_length, instance):
+        
+        '''
+        Candidate instance operatioons : padding, convolution feature extaction 
+        '''
         
         org_Array = list(org_Seq.split())
         pos_Array = list(pos_Seq.split())

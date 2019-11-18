@@ -1,0 +1,10 @@
+{
+"posTagFile":"/home/iasl/Neha_W/NeonWorkspace_1.6/PPI_Preprocessing/src/com/prj/bundle/processed/taggedStream.txt",
+"lexicalFile":"/home/iasl/Neha_W/NeonWorkspace_1.6/PPI_Preprocessing/src/com/prj/bundle/processed/originalStream.txt",
+"filterSize":"3",
+"strideSize":"1",
+"embeddingFile":"/home/iasl/Neha_W/NeonWorkspace_1.6/InSemGenerator/src/com/prj/bundle/resource/GoogleNews-vectors-negative300.bin",
+"featureFile":"/home/iasl/Neha_W/NeonWorkspace_1.6/InSemGenerator/src/com/prj/bundle/processed/feature.txt",
+"contextEmbedding":"/home/iasl/Neha_W/NeonWorkspace_1.6/InSemGenerator/src/com/prj/bundle/processed/context_embed.tsv",
+"invarThreshold":"1.00"
+}

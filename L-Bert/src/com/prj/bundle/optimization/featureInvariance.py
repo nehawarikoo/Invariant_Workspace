@@ -1,7 +1,7 @@
 '''
 Created on Jun 12, 2019
 
-@author: iasl
+@author: nehawarikoo
 '''
 
 import sys
@@ -43,6 +43,8 @@ class SemanticInvariance(object):
     
     def load_posPattern_map(self, feature_locale):
         
+        ''' load POS context n-frames from the Universal Lexical Cluster Map'''
+        
         self.posPattern_map = collections.OrderedDict()
         with open(os.path.join(feature_locale,'feature.tsv'), "r") as bufferReader:
             currentLine = bufferReader.readline()
@@ -81,14 +83,13 @@ class SemanticInvariance(object):
     
     def __semanticInvariance__(self, Pos_Sequence):
         
+        ''' Calculate invariance among n-frames'''
+        
         def get_components(pos_pattern):
             
             tier1BufferDict = {}
             if self.sequence_map.__contains__(pos_pattern):
                 tier1BufferDict = self.sequence_map.get(pos_pattern)
-            else:
-                print('no pattern found')
-                sys.exit()
             
             ts_p20 = np.float32(0)
             ts_p11 = np.float32(0)
@@ -113,6 +114,9 @@ class SemanticInvariance(object):
         
         return(ts_invar)
     
+    '''
+    @__geometricInvariance__() Depreciated module in this version 
+    '''
     def __geometricInvariance__(self, Pos_Sequence, Lex_Sequence):
         
         def __invaraintScore__(ts_p20, ts_p11, ts_p02):
@@ -122,9 +126,7 @@ class SemanticInvariance(object):
         
             startIndex = 0
             endIndex = len(currentToken)
-            #print("range>>",startIndex,">>>",endIndex,">>",currentToken,"***>>>",remainderToken)
             termIndex = endIndex
-            #print("index",termIndex,"token>>",currentToken[termIndex-1])
             bufferToken = currentToken[startIndex:termIndex]
                 
             flag = 0
@@ -224,8 +226,12 @@ class SemanticInvariance(object):
         
         return(invar_Score)
     
-    
+    '''
+    @openConfigurationFile() Depreciated module in this version 
+    '''
     def openConfigurationFile(self, feature_locale):
+        
+        ''' open feature configuration file'''
     
         def format_pattern(bufferString, pattern_list):
             pattern_list.append(list(re.findall('\w+',''.join(word for word in bufferString))))
@@ -276,11 +282,6 @@ class SemanticInvariance(object):
         
         bufferReader.close()
         
-        '''
-        for (t1,v1) in six.iteritems(self.feature_map):
-            for (t2,v2) in six.iteritems(v1):
-                print(t1,'\t',t2,'\t',v2)
-        '''
         
         return()
     
@@ -289,7 +290,10 @@ class SemanticInvariance(object):
         self.openConfigurationFile(feature_locale)
         
         return()
-    
+ 
+    '''
+    @map_to_feature() Depreciated module in this version 
+    '''
     def map_to_feature(self, cluster_tag, pos_pattern, invariance_score):
         
         def minimal_variance_cluster(source_tuple, target_Score):
@@ -372,8 +376,7 @@ class SemanticInvariance(object):
             
         
         if target_clusterId >= 16502:
-            print(cluster_tag,'\t',pos_pattern,'\t',target_clusterId)
-            sys.exit()
+            tf.logging.info('%s' %cluster_tag +'\t %s' %pos_pattern+'\t %s' %target_clusterId)
         
         
         return(target_clusterId, group_clusterId+1)
@@ -381,6 +384,8 @@ class SemanticInvariance(object):
     
     def map_context_to_pattern(self, context_sequence, pattern_type):
         
+         ''' Map POS context n-frame with the pre-trained n-frame features '''
+            
         def normalize(sequence, pattern_type):
             
             for key,value in enumerate(sequence):
@@ -395,6 +400,15 @@ class SemanticInvariance(object):
         def partial_pattern_match(target_sequence, lead_cluster_id, 
                                   universal_pattern_map, pattern_type):
 
+            ''' partial match between n-frames'''
+            
+            '''
+            Args:
+                target_sequence = sequence which is to be compared
+                lead_cluster_id = best cluster id matches from ULC based on the lead sequence in the frame
+                universal_pattern_map = pre-trained cluster id map 
+                pattern_type = "chunk/POS-tag"
+            '''
             ref_score = round(len(target_sequence)/2)            
             pattern_id_list = list(universal_pattern_map.keys())
             start_index = pattern_id_list.index(lead_cluster_id)
@@ -440,7 +454,6 @@ class SemanticInvariance(object):
         universal_pattern_map = self.posPattern_map
             
         for (index, value) in six.iteritems(universal_pattern_map):
-            #print(context_sequence_string,'\t',value)
             pattern_match = list(filter(lambda currVal : currVal 
                                         == context_sequence_string, value))
             cluster_match = list(filter(lambda currVal : currVal 
@@ -455,15 +468,14 @@ class SemanticInvariance(object):
         if lead_cluster_id != -1 and complete_context_id == -1:
             complete_context_id = partial_pattern_match(context_sequence, lead_cluster_id, 
                                                         universal_pattern_map, pattern_type)
-            
-        #print(lead_cluster_id,'\t',complete_context_id)
-        
+        '''
+        In case of no match, append default tag id
+        '''
         if lead_cluster_id == -1 or complete_context_id == -1:
             tf.logging.info('critical error map_context_to_pattern() ~ Unidentified cluster_tag')
             tf.logging.info('%s'%context_sequence)
             lead_cluster_id = 1
             complete_context_id = 2
-            #sys.exit()
             
         return(lead_cluster_id, complete_context_id)
     
